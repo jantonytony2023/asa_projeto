@@ -1,0 +1,73 @@
+---
+- name: Configurar servidor de banco de dados
+  hosts: db  # Certifique-se de que seu inventário Ansible tem um grupo ou host chamado 'db'
+  become: yes
+
+  tasks:
+    # Tarefa 1: Instalar o mariadb-server
+    - name: Instalar o pacote mariadb-server
+      apt:
+        name: mariadb-server
+        state: present
+        update_cache: yes
+      tags:
+        - mariadb
+        - instalacao
+
+    # Tarefa 2: Garantir que o serviço mariadb está ativo e habilitado
+    - name: Iniciar e habilitar o serviço mariadb
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+      tags:
+        - mariadb
+        - servico
+
+    # Tarefa 3: Instalar o pacote autofs
+    - name: Instalar o pacote autofs
+      apt:
+        name: autofs
+        state: present
+      tags:
+        - autofs
+        - instalacao
+
+    # Tarefa 4: Configurar o autofs para montar o NFS
+    - name: Configurar o mapeamento do autofs
+      copy:
+        dest: /etc/auto.master.d/nfs.autofs
+        content: |
+          /var/nfs /etc/auto.nfs
+      tags:
+        - autofs
+        - configuracao
+
+    - name: Criar configuração do ponto de montagem NFS
+      copy:
+        dest: /etc/auto.nfs
+        content: |
+          * -fstype=nfs,rw,sync arq:/dados/nfs/&
+      tags:
+        - autofs
+        - configuracao
+
+    # Tarefa 5: Criar o diretório de montagem
+    - name: Criar diretório /var/nfs
+      file:
+        path: /var/nfs
+        state: directory
+        mode: '0755'
+      tags:
+        - autofs
+        - diretorio
+
+    # Tarefa 6: Reiniciar o serviço autofs
+    - name: Reiniciar o serviço autofs
+      service:
+        name: autofs
+        state: restarted
+        enabled: yes
+      tags:
+        - autofs
+        - servico

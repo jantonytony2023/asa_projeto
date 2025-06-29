@@ -1,0 +1,155 @@
+---
+- name: Configurações Comuns para Todas as VMs
+  hosts: all  # Aplica este playbook a todos os hosts definidos no seu inventário
+  become: true # Executa todas as tarefas com privilégios de root (sudo)
+
+  # Variáveis globais para os usuários e suas chaves públicas
+  vars:
+    users:
+      - nome: jantony
+        chave: "{{ lookup('file', 'files/jantony.pub') }}" # Assume que jantony.pub está em ./files/
+      - nome: jonatas
+        chave: "{{ lookup('file', 'files/jonatas.pub') }}" # Assume que jonatas.pub está em ./files/
+
+  tasks:
+   # - name: Atualizar o sistema operacional (apt update && apt upgrade)
+   #   ansible.builtin.apt:
+   #     update_cache: yes # Atualiza a lista de pacotes
+   #     upgrade: dist     # Realiza um upgrade completo, instalando novas versões e removendo obsoletos
+   #     autoclean: yes    # Limpa o cache de pacotes
+   #     autoremove: yes   # Remove pacotes instalados como dependências que não são mais necessários
+
+    - name: Instalar o chrony (servidor NTP)
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+
+    - name: Configurar NTP com pool.ntp.br
+      ansible.builtin.lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^pool' # Procura por linhas que começam com 'pool'
+        line: 'pool pool.ntp.br iburst' # Substitui ou adiciona a linha com o servidor NTP
+        state: present
+        backup: yes # Cria um backup do arquivo original antes de modificá-lo
+      notify: Restart chrony # Notifica o handler para reiniciar o serviço se houver mudança
+
+    - name: Ajustar zona de tempo para America/Recife
+      community.general.timezone:
+        name: America/Recife
+
+    - name: Criar grupo ifpb
+      ansible.builtin.group:
+        name: ifpb
+        state: present
+
+    - name: Criar usuários e adicionar ao grupo ifpb
+      loop: "{{ users }}" # Itera sobre a lista de usuários definida na seção 'vars'
+      loop_control:
+        loop_var: user # Define a variável de loop para ser 'user'
+      ansible.builtin.user:
+        name: "{{ user.nome }}" # Nome do usuário (jantony, jonatas)
+        groups: ifpb            # Adiciona o usuário ao grupo 'ifpb'
+        append: yes             # Se o usuário já existe, adiciona ao grupo sem remover outros grupos
+        shell: /bin/bash        # Define o shell padrão para o usuário
+        create_home: yes        # Garante que o diretório home do usuário seja criado
+
+    - name: Criar diretório .ssh para os usuários
+      ansible.builtin.file:
+        path: "/home/{{ item.nome }}/.ssh" # Caminho do diretório .ssh no home do usuário
+        state: directory                     # Garante que seja um diretório
+        owner: "{{ item.nome }}"             # Define o proprietário do diretório
+        group: "{{ item.nome }}"             # Define o grupo do diretório
+        mode: '0700'                         # Define as permissões (rwx para o proprietário, nada para outros)
+      loop: "{{ users }}" # Itera sobre a lista de usuários
+
+    - name: Adicionar chave pública dos usuários ao authorized_keys
+      ansible.builtin.copy:
+        content: "{{ item.chave }}" # Conteúdo da chave pública lido do arquivo .pub
+        dest: "/home/{{ item.nome }}/.ssh/authorized_keys" # Destino da chave na VM
+        owner: "{{ item.nome }}"                           # Proprietário do arquivo
+        group: "{{ item.nome }}"                           # Grupo do arquivo
+        mode: '0600'                                       # Permissões (rw para o proprietário, nada para outros)
+      loop: "{{ users }}" # Itera sobre a lista de usuários
+
+    - name: Instalar o servidor SSH (OpenSSH)
+      ansible.builtin.apt:
+        name: openssh-server
+        state: present
+
+    - name: Configurar SSH para apenas autenticação por chave pública
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PasswordAuthentication' # Procura a linha de configuração de senha
+        line: 'PasswordAuthentication no'  # Define para 'no'
+        state: present
+        backup: yes
+      notify: Restart SSHD # Notifica o handler
+
+    - name: Bloquear acesso root via SSH
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin' # Procura a linha de permissão de login root
+        line: 'PermitRootLogin no'   # Define para 'no'
+        state: present
+        backup: yes
+      notify: Restart SSHD # Notifica o handler
+
+    - name: Permitir acesso SSH apenas para grupos vagrant e ifpb
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowGroups' # Procura a linha de grupos permitidos
+        line: 'AllowGroups vagrant ifpb' # Define os grupos permitidos
+        state: present
+        backup: yes
+      notify: Restart SSHD # Notifica o handler
+
+    - name: Adicionar banner de acesso SSH
+      ansible.builtin.copy:
+        src: files/ssh_banner.txt # Caminho do arquivo do banner na sua máquina controladora
+        dest: /etc/issue.net      # Destino do arquivo na VM
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart SSHD # Notifica o handler (o banner é ativado por outra tarefa que reinicia o sshd)
+
+    - name: Ativar o banner no SSH (apontar para /etc/issue.net)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^Banner' # Procura a linha do banner
+        line: 'Banner /etc/issue.net' # Ativa o banner
+        state: present
+        backup: yes
+      notify: Restart SSHD # Notifica o handler
+
+    - name: Habilitar X11Forwarding para interfaces X11 (útil para cli)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?X11Forwarding '
+        line: 'X11Forwarding yes'
+        state: present
+        backup: yes
+      notify: Restart SSHD
+
+    - name: Instalar cliente NFS
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+
+    - name: Permitir sudo para grupo ifpb (no diretório sudoers.d)
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/ifpb_sudo # Caminho do arquivo no diretório sudoers.d
+        line: '%ifpb ALL=(ALL) NOPASSWD: ALL' # A linha de configuração sudoers
+        create: yes # Cria o arquivo se não existir
+        mode: '0440' # Permissões de leitura somente para root
+        validate: 'visudo -cf %s' # Valida a sintaxe do sudoers antes de salvar
+
+  handlers:
+    - name: Restart chrony
+      ansible.builtin.service:
+        name: chrony
+        state: restarted
+
+    - name: Restart SSHD
+      ansible.builtin.service:
+        name: sshd # Nome correto do serviço SSH no Debian
+        state: restarted

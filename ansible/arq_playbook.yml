@@ -1,0 +1,162 @@
+---
+- name: Configuração Completa do Servidor de Arquivos (arq)
+  hosts: arq
+  become: yes
+
+  vars:
+    
+    domain_name: "jantony.jonatas.devops"  
+    db_ip: "192.168.56.123"           
+    db_mac: "08:00:27:a9:a2:37"       
+    app_ip: "192.168.56.143"          
+    app_mac: "08:00:27:78:fe:a5"       
+    dhcp_interface: "enp0s8"
+    nfs_user: "nfs-ifpb"
+    nfs_share: "/dados/nfs"
+    dhcp_range_start: 50
+    dhcp_range_end: 100
+    gateway: "192.168.56.1"
+
+  tasks:
+    # 1. Configuração Básica
+    - name: Configurar hostname
+      ansible.builtin.hostname:
+        name: arq
+
+    # 2. Configuração do DHCP
+    - name: Instalar servidor DHCP
+      ansible.builtin.apt:
+        name: isc-dhcp-server
+        state: present
+
+    - name: Configurar arquivo dhcpd.conf
+      ansible.builtin.copy:
+        dest: /etc/dhcp/dhcpd.conf
+        content: |
+          option domain-name "{{ domain_name }}";
+          option domain-name-servers 1.1.1.1, 8.8.8.8;
+          default-lease-time 600;
+          max-lease-time 7200;
+          authoritative;
+          subnet 192.168.56.0 netmask 255.255.255.0 {
+            range 192.168.56.{{ dhcp_range_start }} 192.168.56.{{ dhcp_range_end }};
+            option routers {{ gateway }};
+            option subnet-mask 255.255.255.0;
+            option broadcast-address 192.168.56.255;
+          }
+          host db {
+            hardware ethernet {{ db_mac }};
+            fixed-address {{ db_ip }};
+          }
+          host app {
+            hardware ethernet {{ app_mac }};
+            fixed-address {{ app_ip }};
+          }
+      notify: restart dhcp
+
+    - name: Definir interface DHCP
+      ansible.builtin.lineinfile:
+        path: /etc/default/isc-dhcp-server
+        regexp: '^INTERFACESv4='
+        line: 'INTERFACESv4="{{ dhcp_interface }}"'
+        create: yes
+      notify: restart dhcp
+
+    - name: Habilitar e iniciar serviço DHCP
+      ansible.builtin.service:
+        name: isc-dhcp-server
+        enabled: yes
+        state: started
+
+    # 3. Configuração do LVM
+    - name: Instalar pacotes LVM
+      ansible.builtin.apt:
+        name: lvm2
+        state: present
+
+    - name: Criar Physical Volumes (sdb, sdc, sdd)
+      community.general.parted:
+        device: "/dev/{{ item }}"
+        number: 1
+        flags: [ lvm ]
+      loop: [ "sdb", "sdc", "sdd" ]
+
+    - name: Criar Volume Group 'dados'
+      community.general.lvg:
+        vg: dados
+        pvs: "/dev/sdb,/dev/sdc,/dev/sdd"
+
+    - name: Criar Logical Volume 'ifpb' (15GB)
+      community.general.lvol:
+        vg: dados
+        lv: ifpb
+        size: 15G
+
+    - name: Formatar LV com ext4
+      ansible.builtin.filesystem:
+        fstype: ext4
+        dev: /dev/dados/ifpb
+
+    - name: Criar diretório /dados
+      ansible.builtin.file:
+        path: /dados
+        state: directory
+        mode: '0755'
+
+    - name: Montar automaticamente /dados
+      ansible.builtin.mount:
+        path: /dados
+        src: /dev/dados/ifpb
+        fstype: ext4
+        state: mounted
+        opts: defaults
+        boot: yes
+
+    # 4. Configuração do NFS (mesmo que antes)
+    - name: Instalar NFS
+      ansible.builtin.apt:
+        name: nfs-kernel-server
+        state: present
+
+    - name: Criar diretório compartilhado
+      ansible.builtin.file:
+        path: "{{ nfs_share }}"
+        state: directory
+        mode: '0775'
+
+    - name: Criar usuário NFS (sem shell)
+      ansible.builtin.user:
+        name: "{{ nfs_user }}"
+        shell: /usr/sbin/nologin
+        system: yes
+
+    - name: Definir dono do diretório
+      ansible.builtin.file:
+        path: "{{ nfs_share }}"
+        owner: "{{ nfs_user }}"
+        group: "{{ nfs_user }}"
+        mode: '0775'
+
+    - name: Configurar exportação NFS
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "{{ nfs_share }} 192.168.56.0/24(rw,sync,no_subtree_check,all_squash,anonuid=$(id -u {{ nfs_user }}),anongid=$(id -g {{ nfs_user }}))"
+        create: yes
+      notify: restart nfs
+
+    - name: Habilitar serviço NFS
+      ansible.builtin.service:
+        name: nfs-kernel-server
+        enabled: yes
+        state: started
+
+  handlers:
+    - name: restart dhcp
+      ansible.builtin.service:
+        name: isc-dhcp-server
+        state: restarted
+
+    - name: restart nfs
+      ansible.builtin.service:
+        name: nfs-kernel-server
+        state: restarted

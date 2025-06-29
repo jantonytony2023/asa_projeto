@@ -1,0 +1,107 @@
+---
+- name: Configurar servidor de aplicação (app)
+  hosts: app  
+  become: yes
+
+  tasks:
+    # Tarefa 1: Instalar o Apache2
+    - name: Instalar o pacote apache2
+      apt:
+        name: apache2
+        state: present
+        update_cache: yes
+      tags:
+        - apache
+        - instalacao
+
+    # Tarefa 2: Garantir que o serviço Apache está ativo
+    - name: Iniciar e habilitar o serviço apache2
+      service:
+        name: apache2
+        state: started
+        enabled: yes
+      tags:
+        - apache
+        - servico
+
+    # Tarefa 3: Criar arquivo index.html personalizado
+    - name: Criar arquivo index.html personalizado
+      copy:
+        dest: /var/www/html/index.html
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Projeto Servidores</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  h1 { color: #2c3e50; }
+                  .team { background: #f8f9fa; padding: 20px; border-radius: 5px; }
+                  .member { margin-bottom: 10px; }
+              </style>
+          </head>
+          <body>
+              <h1>Projeto de Configuração de Servidores</h1>
+              <p>Este projeto consiste na configuração automatizada de servidores web, banco de dados e compartilhamento NFS.</p>
+              
+              <div class="team">
+                  <h2>Equipe</h2>
+                  <div class="member"><strong>Integrante 1:</strong> Jose Jantony - 20232380024</div>
+                  <div class="member"><strong>Integrante 2:</strong> Jonatas Gabriel - 20232380023/div>
+              </div>
+          </body>
+          </html>
+        owner: root
+        group: root
+        mode: '0644'
+      tags:
+        - apache
+        - configuracao
+
+    # Tarefa 4: Instalar o pacote autofs
+    - name: Instalar o pacote autofs
+      apt:
+        name: autofs
+        state: present
+      tags:
+        - autofs
+        - instalacao
+
+    # Tarefa 5: Configurar o autofs para montar o NFS
+    - name: Configurar o mapeamento do autofs
+      copy:
+        dest: /etc/auto.master.d/nfs.autofs
+        content: |
+          /var/nfs /etc/auto.nfs
+      tags:
+        - autofs
+        - configuracao
+
+    - name: Criar configuração do ponto de montagem NFS
+      copy:
+        dest: /etc/auto.nfs
+        content: |
+          * -fstype=nfs,rw,sync arq:/dados/nfs/&
+      tags:
+        - autofs
+        - configuracao
+
+    # Tarefa 6: Criar o diretório de montagem
+    - name: Criar diretório /var/nfs
+      file:
+        path: /var/nfs
+        state: directory
+        mode: '0755'
+      tags:
+        - autofs
+        - diretorio
+
+    # Tarefa 7: Reiniciar o serviço autofs
+    - name: Reiniciar o serviço autofs
+      service:
+        name: autofs
+        state: restarted
+        enabled: yes
+      tags:
+        - autofs
+        - servico

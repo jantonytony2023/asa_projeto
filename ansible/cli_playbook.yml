@@ -1,0 +1,87 @@
+---
+- name: Configurar host cliente (cli)
+  hosts: cli  # Certifique-se de ter um grupo/host 'cli' no seu inventário
+  become: yes
+
+  tasks:
+    # Tarefa 1: Instalar pacotes firefox-esr e xauth
+    - name: Instalar pacotes firefox-esr e xauth
+      apt:
+        name:
+          - firefox-esr
+          - xauth
+        state: present
+        update_cache: yes
+      tags:
+        - pacotes
+        - instalacao
+
+    # Tarefa 2: Configurar SSH para permitir X11 forwarding
+    - name: Configurar SSH para X11 forwarding
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^X11Forwarding'
+        line: 'X11Forwarding yes'
+        state: present
+      notify:
+        - restart ssh
+      tags:
+        - ssh
+        - configuracao
+
+    # Tarefa 3: Instalar o pacote autofs
+    - name: Instalar o pacote autofs
+      apt:
+        name: autofs
+        state: present
+      tags:
+        - autofs
+        - instalacao
+
+    # Tarefa 4: Configurar o autofs para montar o NFS
+    - name: Configurar o mapeamento do autofs
+      copy:
+        dest: /etc/auto.master.d/nfs.autofs
+        content: |
+          /var/nfs /etc/auto.nfs
+      tags:
+        - autofs
+        - configuracao
+
+    - name: Criar configuração do ponto de montagem NFS
+      copy:
+        dest: /etc/auto.nfs
+        content: |
+          * -fstype=nfs,rw,sync arq:/dados/nfs/&
+      tags:
+        - autofs
+        - configuracao
+
+    # Tarefa 5: Criar o diretório de montagem
+    - name: Criar diretório /var/nfs
+      file:
+        path: /var/nfs
+        state: directory
+        mode: '0755'
+      tags:
+        - autofs
+        - diretorio
+
+    # Tarefa 6: Reiniciar o serviço autofs
+    - name: Reiniciar o serviço autofs
+      service:
+        name: autofs
+        state: restarted
+        enabled: yes
+      tags:
+        - autofs
+        - servico
+
+  handlers:
+    - name: restart ssh
+      service:
+        name: sshd
+        state: restarted
+      tags:
+        - ssh
+        - servico

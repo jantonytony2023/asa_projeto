@@ -30,7 +30,7 @@ Todas as máquinas utilizam a box `debian/bookworm64` e o provedor VirtualBox.
 
 - [Vagrant](https://www.vagrantup.com/)
 - [VirtualBox](https://www.virtualbox.org/)
-- [Ansible](https://www.ansible.com/) (instalado na máquina host ou na VM `cli`)
+- [Ansible](https://www.ansible.com/) 
 
 ### Passos para Execução
 
@@ -45,17 +45,12 @@ Todas as máquinas utilizam a box `debian/bookworm64` e o provedor VirtualBox.
    vagrant up
    ```
 
-3. **Acesse a máquina cliente (cli):**
-   ```bash
-   vagrant ssh cli
-   ```
-
-4. **Execute os playbooks do Ansible:**
+3. **Execute os playbooks do Ansible:**
    - Os playbooks estão localizados na pasta `ansible/`.
    - Exemplo de execução:
      ```bash
      cd /vagrant/ansible
-     ansible-playbook -i hosts playbook.yml
+     ansible-playbook -i hosts arq_playbook.yml
      ```
 
 ---

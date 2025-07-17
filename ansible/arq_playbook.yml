@@ -10,7 +10,7 @@
     db_mac: "08:00:27:a9:a2:37"       
     app_ip: "192.168.56.143"          
     app_mac: "08:00:27:78:fe:a5"       
-    dhcp_interface: "enp0s8"
+    dhcp_interface: "eth1"
     nfs_user: "nfs-ifpb"
     nfs_share: "/dados/nfs"
     dhcp_range_start: 50

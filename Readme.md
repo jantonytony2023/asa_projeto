@@ -42,20 +42,9 @@ Todas as máquinas utilizam a box `debian/bookworm64` e o provedor VirtualBox.
 
 2. **Suba as máquinas virtuais:**
    ```bash
-   vagrant up
+   vagrant up --provision
    ```
-
-3. **Execute os playbooks do Ansible:**
-   - Os playbooks estão localizados na pasta `ansible/`.
-   - Exemplo de execução:
-     ```bash
-     cd /vagrant/ansible
-     ansible-playbook -i hosts arq_playbook.yml
-     ```
-
----
-
-## Organização do Projeto
+### Organização do Projeto
 
 ```
 .
